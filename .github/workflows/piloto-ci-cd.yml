@@ -1,0 +1,116 @@
+name: Piloto Vida Ley - CI/CD
+
+on:
+  push:
+    branches: [piloto]
+  pull_request:
+    branches: [piloto]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-publish:
+    runs-on: windows-latest
+    steps:
+      - name: Obtener codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restaurar dependencias
+        run: dotnet restore PilotoVidaLey.slnx
+
+      - name: Compilar
+        run: dotnet build PilotoVidaLey.slnx --configuration Release --no-restore
+
+      - name: Ejecutar pruebas
+        run: dotnet test PilotoVidaLey.slnx --configuration Release --no-build
+
+      - name: Publicar para IIS
+        run: dotnet publish src/PilotoVidaLey/PilotoVidaLey.csproj --configuration Release --no-build --output publish
+
+      - name: Guardar artefacto publicado
+        uses: actions/upload-artifact@v4
+        with:
+          name: vida-ley-iis-publish
+          path: publish/
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy-iis:
+    if: github.event_name == 'push'
+    needs: build-test-publish
+    runs-on: [self-hosted, windows, pilot-iis]
+    steps:
+      - name: Descargar artefacto publicado
+        uses: actions/download-artifact@v4
+        with:
+          name: vida-ley-iis-publish
+          path: publish
+
+      - name: Desplegar en IIS
+        shell: powershell
+        env:
+          IIS_SITE_NAME: ${{ vars.IIS_SITE_NAME }}
+          IIS_DEPLOY_PATH: ${{ vars.IIS_DEPLOY_PATH }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+
+          if ([string]::IsNullOrWhiteSpace($env:IIS_SITE_NAME)) {
+            throw 'Configura la variable de Actions IIS_SITE_NAME con el nombre del sitio IIS.'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:IIS_DEPLOY_PATH)) {
+            throw 'Configura la variable de Actions IIS_DEPLOY_PATH con la ruta fisica del sitio IIS.'
+          }
+
+          Import-Module WebAdministration
+          $site = Get-Website -Name $env:IIS_SITE_NAME -ErrorAction Stop
+          $sitePath = [Environment]::ExpandEnvironmentVariables($site.physicalPath)
+          $sitePath = [System.IO.Path]::GetFullPath($sitePath).TrimEnd('\')
+          $deployPath = (Resolve-Path -LiteralPath $env:IIS_DEPLOY_PATH -ErrorAction Stop).Path.TrimEnd('\')
+          $deployPath = [System.IO.Path]::GetFullPath($deployPath)
+          $deployRoot = [System.IO.Path]::GetPathRoot($deployPath).TrimEnd('\')
+
+          if (-not [string]::Equals($sitePath, $deployPath, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "La ruta configurada no coincide con la ruta fisica del sitio IIS '$env:IIS_SITE_NAME'. Sitio: '$sitePath'; configurada: '$deployPath'."
+          }
+          if ([string]::Equals($deployRoot, $deployPath, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'La ruta de despliegue no puede ser la raiz de una unidad.'
+          }
+
+          $poolName = $site.applicationPool
+          $sourcePath = Join-Path $env:GITHUB_WORKSPACE 'publish'
+          if (-not (Test-Path -LiteralPath $sourcePath -PathType Container)) {
+            throw "No se encontro el artefacto publicado en '$sourcePath'."
+          }
+
+          $offlineFile = Join-Path $deployPath 'app_offline.htm'
+          $poolWasStarted = (Get-WebAppPoolState -Name $poolName).Value -eq 'Started'
+          try {
+            if ($poolWasStarted) {
+              Stop-WebAppPool -Name $poolName
+            }
+            Set-Content -LiteralPath $offlineFile -Value 'Actualizando aplicacion. Intenta nuevamente en unos momentos.' -Encoding UTF8
+
+            & robocopy $sourcePath $deployPath /E /COPY:DAT /DCOPY:DAT /R:3 /W:5
+            if ($LASTEXITCODE -ge 8) {
+              throw "Robocopy fallo con el codigo $LASTEXITCODE."
+            }
+          }
+          finally {
+            try {
+              if (Test-Path -LiteralPath $offlineFile) {
+                Remove-Item -LiteralPath $offlineFile -Force -ErrorAction Stop
+              }
+            }
+            finally {
+              if ($poolWasStarted -and (Get-WebAppPoolState -Name $poolName).Value -ne 'Started') {
+                Start-WebAppPool -Name $poolName
+              }
+            }
+          }

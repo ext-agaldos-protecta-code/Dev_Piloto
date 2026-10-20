@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/PilotoVidaLey/PilotoVidaLey.csproj" />
+  <Project Path="tests/PilotoVidaLey.Tests/PilotoVidaLey.Tests.csproj" />
+</Solution>
