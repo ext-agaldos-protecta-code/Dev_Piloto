@@ -17,27 +17,7 @@ env:
 
 jobs:
   # ============================================================
-  # STAGE 1 - TEMPLATE
-  # Espacio reservado para editar despues (lint, validaciones,
-  # restore, checks de seguridad, etc.). Reemplaza el paso
-  # "Placeholder" por tus propios pasos.
-  # ============================================================
-  stage-1:
-    name: Stage 1 (template)
-    runs-on: windows-latest
-    steps:
-      - name: Obtener codigo
-        uses: actions/checkout@v4
-
-      # TODO: agrega aqui los pasos del Stage 1
-      - name: Placeholder Stage 1
-        shell: pwsh
-        run: |
-          Write-Host "Stage 1 - template. Reemplaza este paso con tu logica."
-          Write-Host "Rama: ${{ github.ref_name }} | Commit: ${{ github.sha }}"
-
-  # ============================================================
-  # STAGE 2 - ANALISIS SONAR
+  # STAGE 1 - ANALISIS SONAR (build + pruebas + escaneo)
   # Requiere en Settings > Secrets and variables > Actions:
   #   Secret   SONAR_TOKEN         (obligatorio)
   #   Variable SONAR_PROJECT_KEY   (obligatorio)
@@ -46,8 +26,7 @@ jobs:
   #                                 existe se usa https://sonarcloud.io)
   # ============================================================
   sonar:
-    name: Stage 2 - Analisis Sonar
-    needs: stage-1
+    name: Stage 1 - Sonar
     runs-on: windows-latest
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -56,18 +35,18 @@ jobs:
       SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
     steps:
       - name: Obtener codigo (historial completo para Sonar)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Configurar Java (requerido por el scanner)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Configurar .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -109,3 +88,22 @@ jobs:
       - name: Finalizar y enviar analisis a Sonar
         shell: pwsh
         run: dotnet sonarscanner end "/d:sonar.token=$env:SONAR_TOKEN"
+
+  # ============================================================
+  # STAGE 2 - SEGURIDAD (ESPACIO RESERVADO)
+  # Pendiente: integrar la herramienta que confirme el area de
+  # seguridad. Reemplaza el paso "Placeholder" por sus pasos.
+  # Solo se ejecuta si Stage 1 (Sonar) termino correctamente.
+  # ============================================================
+  seguridad:
+    name: Stage 2 - Seguridad (pendiente)
+    needs: sonar
+    runs-on: windows-latest
+    steps:
+      - name: Obtener codigo
+        uses: actions/checkout@v5
+
+      # TODO: agrega aqui los pasos de la herramienta de seguridad
+      - name: Placeholder Seguridad
+        shell: pwsh
+        run: Write-Host "Stage de seguridad pendiente de integrar."
