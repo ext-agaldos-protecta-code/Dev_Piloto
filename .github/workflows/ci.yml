@@ -22,8 +22,10 @@ jobs:
   #   Secret   SONAR_TOKEN         (obligatorio)
   #   Variable SONAR_PROJECT_KEY   (obligatorio)
   #   Variable SONAR_ORGANIZATION  (solo SonarQube Cloud)
-  #   Variable SONAR_HOST_URL      (solo SonarQube Server; si no
-  #                                 existe se usa https://sonarcloud.io)
+  #   Variable SONAR_HOST_URL      (solo SonarQube Server; si queda
+  #                                 en PENDIENTE se usa https://sonarcloud.io)
+  # Ya estan creados con valor "PENDIENTE": reemplazalo por el real.
+  # Las variables opcionales que no uses dejalas en PENDIENTE.
   # ============================================================
   sonar:
     name: Stage 1 - Sonar
@@ -31,8 +33,8 @@ jobs:
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
-      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
-      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+      SONAR_ORGANIZATION_VAR: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_HOST_URL_VAR: ${{ vars.SONAR_HOST_URL }}
     steps:
       - name: Obtener codigo (historial completo para Sonar)
         uses: actions/checkout@v5
@@ -50,12 +52,18 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      # Los valores "PENDIENTE" se tratan como no configurados.
       - name: Validar configuracion de Sonar
         shell: pwsh
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:SONAR_TOKEN)) { throw 'Falta el secret SONAR_TOKEN.' }
-          if ([string]::IsNullOrWhiteSpace($env:SONAR_PROJECT_KEY)) { throw 'Falta la variable SONAR_PROJECT_KEY.' }
-          Write-Host "Servidor Sonar: $env:SONAR_HOST_URL"
+          function Pendiente($v) { [string]::IsNullOrWhiteSpace($v) -or $v.Trim() -eq 'PENDIENTE' }
+          if (Pendiente $env:SONAR_TOKEN) { throw 'Configura el secret SONAR_TOKEN (hoy esta vacio o en PENDIENTE).' }
+          if (Pendiente $env:SONAR_PROJECT_KEY) { throw 'Configura la variable SONAR_PROJECT_KEY (hoy esta vacia o en PENDIENTE).' }
+          $sonarHost = if (Pendiente $env:SONAR_HOST_URL_VAR) { 'https://sonarcloud.io' } else { $env:SONAR_HOST_URL_VAR }
+          $sonarOrg = if (Pendiente $env:SONAR_ORGANIZATION_VAR) { '' } else { $env:SONAR_ORGANIZATION_VAR }
+          "SONAR_HOST_URL=$sonarHost" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SONAR_ORGANIZATION=$sonarOrg" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Servidor Sonar: $sonarHost"
 
       - name: Instalar SonarScanner for .NET
         shell: pwsh
