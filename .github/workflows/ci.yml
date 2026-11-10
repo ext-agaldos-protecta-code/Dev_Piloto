@@ -1,0 +1,111 @@
+name: CI - Orquestacion
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  DOTNET_VERSION: 10.0.x
+  SOLUTION: PilotoVidaLey.slnx
+
+jobs:
+  # ============================================================
+  # STAGE 1 - TEMPLATE
+  # Espacio reservado para editar despues (lint, validaciones,
+  # restore, checks de seguridad, etc.). Reemplaza el paso
+  # "Placeholder" por tus propios pasos.
+  # ============================================================
+  stage-1:
+    name: Stage 1 (template)
+    runs-on: windows-latest
+    steps:
+      - name: Obtener codigo
+        uses: actions/checkout@v4
+
+      # TODO: agrega aqui los pasos del Stage 1
+      - name: Placeholder Stage 1
+        shell: pwsh
+        run: |
+          Write-Host "Stage 1 - template. Reemplaza este paso con tu logica."
+          Write-Host "Rama: ${{ github.ref_name }} | Commit: ${{ github.sha }}"
+
+  # ============================================================
+  # STAGE 2 - ANALISIS SONAR
+  # Requiere en Settings > Secrets and variables > Actions:
+  #   Secret   SONAR_TOKEN         (obligatorio)
+  #   Variable SONAR_PROJECT_KEY   (obligatorio)
+  #   Variable SONAR_ORGANIZATION  (solo SonarQube Cloud)
+  #   Variable SONAR_HOST_URL      (solo SonarQube Server; si no
+  #                                 existe se usa https://sonarcloud.io)
+  # ============================================================
+  sonar:
+    name: Stage 2 - Analisis Sonar
+    needs: stage-1
+    runs-on: windows-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+    steps:
+      - name: Obtener codigo (historial completo para Sonar)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configurar Java (requerido por el scanner)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Validar configuracion de Sonar
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SONAR_TOKEN)) { throw 'Falta el secret SONAR_TOKEN.' }
+          if ([string]::IsNullOrWhiteSpace($env:SONAR_PROJECT_KEY)) { throw 'Falta la variable SONAR_PROJECT_KEY.' }
+          Write-Host "Servidor Sonar: $env:SONAR_HOST_URL"
+
+      - name: Instalar SonarScanner for .NET
+        shell: pwsh
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: Iniciar analisis Sonar
+        shell: pwsh
+        run: |
+          $scanArgs = @(
+            "/k:$env:SONAR_PROJECT_KEY",
+            "/d:sonar.token=$env:SONAR_TOKEN",
+            "/d:sonar.host.url=$env:SONAR_HOST_URL",
+            "/d:sonar.cs.opencover.reportsPaths=**/TestResults/**/coverage.opencover.xml"
+          )
+          if (-not [string]::IsNullOrWhiteSpace($env:SONAR_ORGANIZATION)) {
+            $scanArgs += "/o:$env:SONAR_ORGANIZATION"
+          }
+          dotnet sonarscanner begin @scanArgs
+
+      - name: Restaurar y compilar
+        shell: pwsh
+        run: |
+          dotnet restore $env:SOLUTION
+          dotnet build $env:SOLUTION --configuration Release --no-restore
+
+      - name: Pruebas con cobertura
+        shell: pwsh
+        run: dotnet test $env:SOLUTION --configuration Release --no-build --collect:"XPlat Code Coverage;Format=opencover" --results-directory TestResults
+
+      - name: Finalizar y enviar analisis a Sonar
+        shell: pwsh
+        run: dotnet sonarscanner end "/d:sonar.token=$env:SONAR_TOKEN"
