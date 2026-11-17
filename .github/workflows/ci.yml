@@ -54,7 +54,7 @@ jobs:
 
       # Los valores "PENDIENTE" se tratan como no configurados.
       - name: Validar configuracion de Sonar
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& '{0}'"
         run: |
           function Pendiente($v) { [string]::IsNullOrWhiteSpace($v) -or $v.Trim() -eq 'PENDIENTE' }
           if (Pendiente $env:SONAR_TOKEN) { throw 'Configura el secret SONAR_TOKEN (hoy esta vacio o en PENDIENTE).' }
@@ -63,7 +63,7 @@ jobs:
           Write-Host "Servidor Sonar: $env:SONAR_HOST_URL"
 
       - name: Verificar conexion con SonarQube (local)
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& '{0}'"
         run: |
           $url = $env:SONAR_HOST_URL.TrimEnd('/') + '/api/system/status'
           try {
@@ -75,13 +75,13 @@ jobs:
           if ($status.status -ne 'UP') { throw "SonarQube no esta disponible (estado: $($status.status))." }
 
       - name: Instalar SonarScanner for .NET
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& '{0}'"
         run: |
           dotnet tool update --global dotnet-sonarscanner
           "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding ascii
 
       - name: Iniciar analisis Sonar
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& '{0}'"
         run: |
           $scanArgs = @(
             "/k:$env:SONAR_PROJECT_KEY",
@@ -92,17 +92,17 @@ jobs:
           dotnet sonarscanner begin @scanArgs
 
       - name: Restaurar y compilar
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& '{0}'"
         run: |
           dotnet restore $env:SOLUTION
           dotnet build $env:SOLUTION --configuration Release --no-restore
 
       - name: Pruebas con cobertura
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& '{0}'"
         run: dotnet test $env:SOLUTION --configuration Release --no-build --collect:"XPlat Code Coverage;Format=opencover" --results-directory TestResults
 
       - name: Finalizar y enviar analisis a Sonar
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command "& '{0}'"
         run: dotnet sonarscanner end "/d:sonar.token=$env:SONAR_TOKEN"
 
   # ============================================================
