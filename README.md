@@ -29,3 +29,5 @@ La aplicacion responde en `/` y `/health`.
 5. Al hacer push a `piloto`, se ejecuta CI y, si pasa, CD actualiza el directorio del sitio. Los pull requests solo ejecutan CI.
 
 No almacenar credenciales en el repositorio. Este ejemplo copia los archivos publicados al directorio configurado y conserva archivos que ya existan allí; validar el procedimiento de respaldo y recuperacion antes de usarlo con datos o trafico real.
+
+Prueba Sonar
