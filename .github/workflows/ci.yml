@@ -18,17 +18,17 @@ env:
 jobs:
   # ============================================================
   # STAGE 1 - ANALISIS SONAR (build + pruebas + escaneo)
-  # SonarQube Server alojado en una EC2 de AWS.
+  # SonarQube Server local, ejecutado en un self-hosted runner (Windows).
   # Requiere en Settings > Secrets and variables > Actions:
   #   Secret   SONAR_TOKEN        token de analisis generado en SonarQube
-  #   Variable SONAR_HOST_URL     URL de la EC2, ej. http://<ip-o-dns>:9000
+  #   Variable SONAR_HOST_URL     URL de SonarQube, ej. http://localhost:9000
   #   Variable SONAR_PROJECT_KEY  clave del proyecto en SonarQube
   # Ya estan creados con valor "PENDIENTE": reemplazalos por los reales.
-  # IMPORTANTE: el runner debe poder llegar a la EC2 (Security Group).
+  # IMPORTANTE: el runner self-hosted debe estar activo (run.cmd) y SonarQube levantado.
   # ============================================================
   sonar:
     name: Stage 1 - Sonar
-    runs-on: windows-latest
+    runs-on: [self-hosted, Windows]
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
@@ -47,6 +47,8 @@ jobs:
 
       - name: Configurar .NET
         uses: actions/setup-dotnet@v5
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}\dotnet
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -57,24 +59,26 @@ jobs:
           function Pendiente($v) { [string]::IsNullOrWhiteSpace($v) -or $v.Trim() -eq 'PENDIENTE' }
           if (Pendiente $env:SONAR_TOKEN) { throw 'Configura el secret SONAR_TOKEN (hoy esta vacio o en PENDIENTE).' }
           if (Pendiente $env:SONAR_PROJECT_KEY) { throw 'Configura la variable SONAR_PROJECT_KEY (hoy esta vacia o en PENDIENTE).' }
-          if (Pendiente $env:SONAR_HOST_URL) { throw 'Configura la variable SONAR_HOST_URL con la URL de la EC2 (hoy esta vacia o en PENDIENTE).' }
+          if (Pendiente $env:SONAR_HOST_URL) { throw 'Configura la variable SONAR_HOST_URL con la URL de SonarQube (hoy esta vacia o en PENDIENTE).' }
           Write-Host "Servidor Sonar: $env:SONAR_HOST_URL"
 
-      - name: Verificar conexion con SonarQube (EC2)
+      - name: Verificar conexion con SonarQube (local)
         shell: pwsh
         run: |
           $url = $env:SONAR_HOST_URL.TrimEnd('/') + '/api/system/status'
           try {
             $status = Invoke-RestMethod -Uri $url -TimeoutSec 30
           } catch {
-            throw "No se pudo conectar a $url. Revisa que la EC2 este encendida y que su Security Group permita trafico desde el runner. Detalle: $($_.Exception.Message)"
+            throw "No se pudo conectar a $url. Revisa que SonarQube este levantado en la maquina del runner. Detalle: $($_.Exception.Message)"
           }
           Write-Host "Estado de SonarQube: $($status.status) (version $($status.version))"
           if ($status.status -ne 'UP') { throw "SonarQube no esta disponible (estado: $($status.status))." }
 
       - name: Instalar SonarScanner for .NET
         shell: pwsh
-        run: dotnet tool install --global dotnet-sonarscanner
+        run: |
+          dotnet tool update --global dotnet-sonarscanner
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
       - name: Iniciar analisis Sonar
         shell: pwsh
